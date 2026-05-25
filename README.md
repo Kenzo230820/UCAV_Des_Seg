@@ -1,30 +1,22 @@
-## Paso 1 de 10 — Análisis estático de código (SAST)
-
-¡El tutorial ha comenzado! 🎉
+## Paso 2 de 10 — Hardening del pipeline CI/CD
 
 ### ¿Por qué importa esto?
 
-El SAST detecta vulnerabilidades en el código **antes** de que lleguen a producción. Es la herramienta con mejor ratio coste/beneficio en DevSecOps: cuesta ~0€ en GitHub y detecta problemas en cada pull request, antes de cualquier revisión manual.
+Un pipeline de seguridad mal configurado puede ser el vector de ataque. Los workflows de GitHub Actions pueden tener **permisos excesivos**, **sin límite de tiempo** (lo que permite que un atacante mantenga un runner comprometido durante horas) o usar versiones de actions que podrían cambiar bajo tus pies.
+
+El OWASP Top 10 CI/CD incluye como riesgo #1 los flujos con permisos excesivos.
 
 ### Situación actual
 
-`src/app.py` contiene **7 vulnerabilidades reales**:
+Tu `sast.yml` actual funciona, pero tiene tres problemas de hardening:
 
-| # | Vulnerabilidad | Función | Severidad |
-|---|---|---|---|
-| 1 | SQL Injection | `get_user()` | 🔴 Crítica |
-| 2 | Command Injection | `ping()` | 🔴 Crítica |
-| 3 | Path Traversal | `read_file()` | 🟠 Alta |
-| 4 | Secreto hardcodeado (`SECRET_KEY`) | línea 16 | 🟠 Alta |
-| 5 | API key hardcodeada | línea 19 | 🟠 Alta |
-| 6 | Hash débil (MD5) | `hash_password()` | 🟡 Media |
-| 7 | Debug mode en producción | línea 14 | 🟡 Media |
-
-Ninguna está siendo detectada todavía.
+1. **Sin `permissions` explícitas** → por defecto el token tiene permisos de escritura en todo el repo
+2. **Sin `timeout-minutes`** → un build colgado puede correr indefinidamente (coste y riesgo)
+3. **Actions sin versión fija a SHA** → `@v4` puede cambiar en cualquier momento si el mantenedor hace push al tag
 
 ### Tu tarea
 
-Crea el fichero `.github/workflows/sast.yml`:
+Actualiza `.github/workflows/sast.yml` con estas tres mejoras:
 
 ```yaml
 name: SAST — Análisis estático
@@ -35,45 +27,42 @@ on:
   pull_request:
     branches: [main]
 
+# ✅ MEJORA 1: Mínimo de permisos necesarios (principle of least privilege)
 permissions:
   contents: read
+  security-events: write   # necesario para subir resultados a Code Scanning
 
 jobs:
   semgrep:
     name: Semgrep SAST
     runs-on: ubuntu-latest
+    # ✅ MEJORA 2: Timeout explícito — mata el job si tarda más de 15 minutos
+    timeout-minutes: 15
     container:
       image: semgrep/semgrep:latest
     steps:
-      - uses: actions/checkout@v4
+      # ✅ MEJORA 3: Pinear action a SHA completo (inmutable, no puede cambiar)
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Ejecutar Semgrep
         run: semgrep scan --config=auto --error src/
 ```
 
-### Cómo hacerlo
+### ¿Cómo obtener el SHA de una action?
 
-**Desde la web de GitHub:**
-1. **Add file** → **Create new file**
-2. Nombre: `.github/workflows/sast.yml`
-3. Pega el contenido → **Commit changes** → **Commit directly to main**
-
-**Desde la terminal:**
 ```bash
-mkdir -p .github/workflows
-# crea .github/workflows/sast.yml con el contenido de arriba
-git add .github/workflows/sast.yml
-git commit -m "ci: add Semgrep SAST workflow"
-git push
+# En la página de GitHub de la action → Releases → clic en el tag → copia el SHA del commit
+# O desde la terminal:
+gh api repos/actions/checkout/git/refs/tags/v4 --jq '.object.sha'
 ```
 
 ### ¿Qué verificará el bot?
 
-- ✅ Que existe `.github/workflows/sast.yml`
-- ✅ Que el fichero contiene la cadena `semgrep`
+- ✅ Que `sast.yml` contiene `permissions:`
+- ✅ Que `sast.yml` contiene `timeout-minutes:`
 
 ### ¿Qué pasará después?
 
-Semgrep encontrará las vulnerabilidades — el workflow fallará (❌). **Eso es lo esperado.** En el Paso 2 aprenderás a configurar el pipeline de forma segura antes de corregir el código.
+En el **Paso 3** añadirás escaneo de seguridad al contenedor Docker de la aplicación.
 
 ---
-*Paso 1 de 10 · Tutorial Avanzado de DevSecOps*
+*Paso 2 de 10 · Tutorial Avanzado de DevSecOps*
