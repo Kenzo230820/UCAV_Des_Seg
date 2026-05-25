@@ -1,40 +1,79 @@
-# 🔐 Tutorial Avanzado de DevSecOps
+## Paso 1 de 10 — Análisis estático de código (SAST)
 
-Bienvenido al tutorial interactivo de seguridad avanzada en pipelines. Este repositorio te guía paso a paso a través de las situaciones reales del día a día de un equipo DevSecOps.
+¡El tutorial ha comenzado! 🎉
 
-## ¿Qué aprenderás?
+### ¿Por qué importa esto?
 
-| Paso | Tema | Herramienta | Nivel |
-|------|------|-------------|-------|
-| 1 | Análisis estático de código (SAST) | Semgrep | 🟢 Base |
-| 2 | Hardening del pipeline CI/CD | GitHub Actions | 🟡 Medio |
-| 3 | Escaneo de contenedores | Trivy | 🟡 Medio |
-| 4 | Corrección de Dockerfile | Docker best practices | 🟡 Medio |
-| 5 | Escaneo de Infraestructura como Código | Checkov | 🟡 Medio |
-| 6 | Corrección de misconfigurations en Terraform | Terraform | 🟡 Medio |
-| 7 | Detección de secretos en código | gitleaks | 🟠 Avanzado |
-| 8 | Gestión de falsos positivos | Semgrep suppressions | 🟠 Avanzado |
-| 9 | Política de excepciones con gobernanza | YAML governance | 🔴 Experto |
-| 10 | SBOM y seguridad de cadena de suministro | Syft + SHA pinning | 🔴 Experto |
+El SAST detecta vulnerabilidades en el código **antes** de que lleguen a producción. Es la herramienta con mejor ratio coste/beneficio en DevSecOps: cuesta ~0€ en GitHub y detecta problemas en cada pull request, antes de cualquier revisión manual.
 
-## ¿Cómo funciona?
+### Situación actual
 
+`src/app.py` contiene **7 vulnerabilidades reales**:
+
+| # | Vulnerabilidad | Función | Severidad |
+|---|---|---|---|
+| 1 | SQL Injection | `get_user()` | 🔴 Crítica |
+| 2 | Command Injection | `ping()` | 🔴 Crítica |
+| 3 | Path Traversal | `read_file()` | 🟠 Alta |
+| 4 | Secreto hardcodeado (`SECRET_KEY`) | línea 16 | 🟠 Alta |
+| 5 | API key hardcodeada | línea 19 | 🟠 Alta |
+| 6 | Hash débil (MD5) | `hash_password()` | 🟡 Media |
+| 7 | Debug mode en producción | línea 14 | 🟡 Media |
+
+Ninguna está siendo detectada todavía.
+
+### Tu tarea
+
+Crea el fichero `.github/workflows/sast.yml`:
+
+```yaml
+name: SAST — Análisis estático
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ejecutar Semgrep
+        run: semgrep scan --config=auto --error src/
 ```
-Tú completas una tarea → GitHub Actions lo valida → README se actualiza → siguiente paso
+
+### Cómo hacerlo
+
+**Desde la web de GitHub:**
+1. **Add file** → **Create new file**
+2. Nombre: `.github/workflows/sast.yml`
+3. Pega el contenido → **Commit changes** → **Commit directly to main**
+
+**Desde la terminal:**
+```bash
+mkdir -p .github/workflows
+# crea .github/workflows/sast.yml con el contenido de arriba
+git add .github/workflows/sast.yml
+git commit -m "ci: add Semgrep SAST workflow"
+git push
 ```
 
-Cada paso tiene validaciones automáticas. El bot verifica exactamente lo que se indica — no más, no menos.
+### ¿Qué verificará el bot?
 
-## Empezar
+- ✅ Que existe `.github/workflows/sast.yml`
+- ✅ Que el fichero contiene la cadena `semgrep`
 
-1. Haz click en **"Use this template"** → **"Create a new repository"**
-2. En tu nuevo repositorio, ve a la pestaña **Actions**
-3. Si ves el aviso *"Workflows aren't being run"*, haz click en **"I understand my workflows, enable them"**
-4. En el panel izquierdo haz click en **"Step 0: Empezar tutorial"**
-5. Haz click en **"Run workflow"** → **"Run workflow"**
+### ¿Qué pasará después?
 
-El README se actualizará con el Paso 1 en unos segundos.
+Semgrep encontrará las vulnerabilidades — el workflow fallará (❌). **Eso es lo esperado.** En el Paso 2 aprenderás a configurar el pipeline de forma segura antes de corregir el código.
 
 ---
-
-> **Requisitos**: Repositorio propio (no fork directo). Usa **"Use this template"**.
+*Paso 1 de 10 · Tutorial Avanzado de DevSecOps*
