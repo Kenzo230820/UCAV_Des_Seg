@@ -1,0 +1,61 @@
+name: "Paso 1: Detectar SAST workflow"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sast.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Verificar que estamos en el Paso 1
+        id: check-step
+        run: |
+          if grep -q "Paso 1 de 10" README.md 2>/dev/null; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "active=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validar sast.yml
+        if: steps.check-step.outputs.active == 'true'
+        run: |
+          if [ ! -f ".github/workflows/sast.yml" ]; then
+            echo "❌ No se encontró .github/workflows/sast.yml"
+            exit 1
+          fi
+          if ! grep -qi "semgrep" .github/workflows/sast.yml; then
+            echo "❌ sast.yml no contiene referencia a semgrep"
+            exit 1
+          fi
+          echo "✅ sast.yml encontrado y contiene semgrep"
+
+      - name: Actualizar README al Paso 2
+        if: steps.check-step.outputs.active == 'true'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const content = fs.readFileSync(
+              process.env.GITHUB_WORKSPACE + '/.github/steps/step2.md', 'utf8'
+            );
+            const encoded = Buffer.from(content).toString('base64');
+            const { data: file } = await github.rest.repos.getContent({
+              owner: context.repo.owner, repo: context.repo.repo, path: 'README.md'
+            });
+            await github.rest.repos.createOrUpdateFileContents({
+              owner: context.repo.owner, repo: context.repo.repo, path: 'README.md',
+              message: '📖 Paso 2 desbloqueado — CI/CD Hardening',
+              content: encoded, sha: file.sha,
+              committer: { name: 'github-actions[bot]', email: '41898282+github-actions[bot]@users.noreply.github.com' }
+            });

@@ -1,0 +1,21 @@
+rules:
+  - id: hardcoded-api-key-pattern
+    patterns:
+      - pattern: $KEY = "sk-prod-..."
+      - pattern-not: $KEY = os.environ.get(...)
+    message: "API key hardcodeada detectada. Usar variables de entorno: os.getenv('API_KEY')"
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: CWE-798
+
+  - id: debug-mode-flask-production
+    patterns:
+      - pattern: app.config['DEBUG'] = True
+    message: "Flask DEBUG=True expone el debugger interactivo. Usar os.getenv('FLASK_DEBUG', 'false')"
+    languages: [python]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: CWE-489

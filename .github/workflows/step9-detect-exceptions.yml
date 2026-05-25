@@ -1,0 +1,68 @@
+name: "Paso 9: Detectar política de excepciones"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'exceptions.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Verificar que estamos en el Paso 9
+        id: check-step
+        run: |
+          if grep -q "Paso 9 de 10" README.md 2>/dev/null; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "active=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validar exceptions.yml
+        if: steps.check-step.outputs.active == 'true'
+        run: |
+          EXC="exceptions.yml"
+          if [ ! -f "$EXC" ]; then
+            echo "❌ No se encontró exceptions.yml"
+            exit 1
+          fi
+          MISSING=""
+          for field in "rule_id:" "justification:" "owner:" "expires:" "status:"; do
+            if ! grep -q "$field" "$EXC"; then
+              MISSING="$MISSING $field"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "❌ exceptions.yml falta los campos:$MISSING"
+            exit 1
+          fi
+          echo "✅ exceptions.yml tiene todos los campos requeridos: rule_id, justification, owner, expires, status"
+
+      - name: Actualizar README al Paso 10
+        if: steps.check-step.outputs.active == 'true'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const content = fs.readFileSync(
+              process.env.GITHUB_WORKSPACE + '/.github/steps/step10.md', 'utf8'
+            );
+            const encoded = Buffer.from(content).toString('base64');
+            const { data: file } = await github.rest.repos.getContent({
+              owner: context.repo.owner, repo: context.repo.repo, path: 'README.md'
+            });
+            await github.rest.repos.createOrUpdateFileContents({
+              owner: context.repo.owner, repo: context.repo.repo, path: 'README.md',
+              message: '📖 Paso 10 desbloqueado — SBOM & Supply Chain',
+              content: encoded, sha: file.sha,
+              committer: { name: 'github-actions[bot]', email: '41898282+github-actions[bot]@users.noreply.github.com' }
+            });

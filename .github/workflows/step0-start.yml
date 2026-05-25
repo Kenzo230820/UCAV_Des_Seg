@@ -1,0 +1,31 @@
+name: "Paso 0: Iniciar Tutorial"
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  start:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: >
+      github.actor != 'github-actions[bot]' && (
+        github.event_name == 'workflow_dispatch' ||
+        github.event.before == '0000000000000000000000000000000000000000'
+      )
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const step1 = fs.readFileSync('.github/steps/step1.md', 'utf8');
+            const { owner, repo } = context.repo;
+            await github.rest.repos.createOrUpdateFileContents({
+              owner, repo,
+              path: 'README.md',
+              message: 'paso 1: tutorial iniciado',
+              content: Buffer.from(step1).toString('base64'),
+              sha: (await github.rest.repos.getContent({ owner, repo, path: 'README.md' })).data.sha
+            });

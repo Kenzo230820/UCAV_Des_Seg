@@ -1,0 +1,24 @@
+# exceptions.yml — Política de excepciones y falsos positivos
+# Cada entrada requiere: rule_id, justification, owner, expires, status
+# Aprobación del equipo de seguridad requerida antes de fusionar cambios.
+#
+# Proceso:
+#   1. Abre un ticket en el sistema de gestión (SEC-XXX)
+#   2. El equipo de seguridad revisa y aprueba
+#   3. Añade la entrada aquí con referencia al ticket
+#   4. Las excepciones expiran: renovar o revocar en la fecha indicada
+#
+# Copiar este fichero a exceptions.yml y rellenar con tus casos reales.
+
+exceptions:
+  - rule_id: "python.lang.security.insecure-hash-algorithms"
+    justification: |
+      hash_password() en src/app.py usa MD5 para caché de sesiones no-críticas,
+      no para contraseñas de usuario. Las contraseñas de usuario usan bcrypt
+      en auth_service.py. Riesgo real: bajo.
+    owner: "security-team@empresa.com"
+    ticket: "SEC-042"
+    created: "2026-04-30"
+    expires: "2026-10-30"
+    status: "approved"
+    reviewed_by: "alice@empresa.com"

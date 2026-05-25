@@ -1,0 +1,68 @@
+name: "Paso 4: Detectar Dockerfile corregido"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Verificar que estamos en el Paso 4
+        id: check-step
+        run: |
+          if grep -q "Paso 4 de 10" README.md 2>/dev/null; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "active=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validar Dockerfile corregido
+        if: steps.check-step.outputs.active == 'true'
+        run: |
+          # 1. Debe tener directiva USER (no root)
+          if ! grep -q "^USER " Dockerfile; then
+            echo "❌ Dockerfile no tiene directiva USER (sigue corriendo como root)"
+            exit 1
+          fi
+          # 2. No debe tener secretos en ENV
+          if grep -qE "^ENV[[:space:]]+(API_KEY|DB_PASSWORD|INTERNAL_TOKEN)=" Dockerfile; then
+            echo "❌ Dockerfile todavía tiene secretos en variables ENV"
+            exit 1
+          fi
+          # 3. Debe tener HEALTHCHECK
+          if ! grep -q "HEALTHCHECK" Dockerfile; then
+            echo "❌ Dockerfile no tiene HEALTHCHECK"
+            exit 1
+          fi
+          echo "✅ Dockerfile corregido: USER presente, sin secretos ENV, HEALTHCHECK configurado"
+
+      - name: Actualizar README al Paso 5
+        if: steps.check-step.outputs.active == 'true'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const content = fs.readFileSync(
+              process.env.GITHUB_WORKSPACE + '/.github/steps/step5.md', 'utf8'
+            );
+            const encoded = Buffer.from(content).toString('base64');
+            const { data: file } = await github.rest.repos.getContent({
+              owner: context.repo.owner, repo: context.repo.repo, path: 'README.md'
+            });
+            await github.rest.repos.createOrUpdateFileContents({
+              owner: context.repo.owner, repo: context.repo.repo, path: 'README.md',
+              message: '📖 Paso 5 desbloqueado — IaC Scan',
+              content: encoded, sha: file.sha,
+              committer: { name: 'github-actions[bot]', email: '41898282+github-actions[bot]@users.noreply.github.com' }
+            });

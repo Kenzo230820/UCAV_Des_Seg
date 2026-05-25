@@ -1,0 +1,14 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "tutorial-api-key"
+description = "API key del tutorial (patrón sk-prod-)"
+regex = '''sk-prod-[a-zA-Z0-9]{16,}'''
+tags = ["tutorial", "api-key"]
+
+[[rules]]
+id = "internal-jwt-token"
+description = "JWT token hardcodeado"
+regex = '''eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}'''
+tags = ["jwt", "token"]
