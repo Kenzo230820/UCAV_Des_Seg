@@ -1,78 +1,76 @@
-## Paso 10 de 10 — SBOM y seguridad de cadena de suministro
+# ¡Enhorabuena! Has completado el Tutorial Avanzado de DevSecOps 🏆
 
-### ¿Por qué importa esto?
+Has construido un pipeline de seguridad completo, cubriendo las 10 disciplinas fundamentales de DevSecOps. Esto es lo que has implementado:
 
-El ataque a SolarWinds (2020) demostró que el mayor riesgo no siempre está en tu código, sino en tus dependencias. Un **SBOM (Software Bill of Materials)** es un inventario completo de todos los componentes de tu aplicación — librerías, versiones, licencias, y sus CVEs conocidos.
+## Resumen de lo que has aprendido
 
-Es obligatorio en contratos con el gobierno de EE.UU. desde 2021 (EO 14028) y cada vez más requerido en auditorías de enterprise.
+| # | Disciplina | Herramienta | Lo que detecta |
+|---|---|---|---|
+| 1 | SAST | Semgrep | Vulnerabilidades en código fuente |
+| 2 | CI/CD Hardening | GitHub Actions | Permisos mínimos, timeouts, SHA pinning |
+| 3 | Container Scan | Trivy | CVEs en imágenes Docker |
+| 4 | Container Fix | Dockerfile best practices | Imagen EOL, root, secretos en ENV |
+| 5 | IaC Scan | Checkov | Misconfigurations en Terraform/cloud |
+| 6 | IaC Fix | Terraform | S3 público, DB expuesta, SG abierto |
+| 7 | Secrets Detection | gitleaks | Credenciales en código e historial |
+| 8 | False Positives | nosemgrep con tracking | Gobernanza de supresiones |
+| 9 | Exceptions Policy | exceptions.yml | Política centralizada auditada |
+| 10 | SBOM | Syft + Grype | Inventario y CVEs en dependencias |
 
-### Tu tarea
+## Tu pipeline de seguridad ahora incluye
 
-Crea `.github/workflows/sbom.yml`:
+```
+Push → SAST (Semgrep) → Container Scan (Trivy) → IaC Scan (Checkov)
+                ↓                    ↓                    ↓
+         Code Scanning          Code Scanning         Code Scanning
+         (GitHub)                (GitHub)              (GitHub)
 
-```yaml
-name: SBOM — Software Bill of Materials
-
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'requirements.txt'
-      - 'Dockerfile'
-      - 'src/**'
-  release:
-    types: [published]
-
-permissions:
-  contents: write    # para subir el SBOM como release asset
-  packages: write    # para publicar en GitHub Packages
-
-jobs:
-  sbom:
-    name: Generate SBOM with Syft
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      # ✅ Buena práctica: actions pineadas a SHA
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-
-      - name: Instalar Syft
-        uses: anchore/sbom-action/download-syft@v0.18.0
-
-      - name: Generar SBOM del repositorio
-        run: |
-          syft . \
-            --output cyclonedx-json=sbom-source.json \
-            --output spdx-json=sbom-spdx.json \
-            --output table
-
-      - name: Subir SBOM como artefacto
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom-${{ github.sha }}
-          path: |
-            sbom-source.json
-            sbom-spdx.json
-          retention-days: 90
-
-      - name: Escanear SBOM con Grype (vulnerabilidades en dependencias)
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
-          grype sbom:sbom-source.json --fail-on high
+Push → Secrets Scan (gitleaks) → SBOM (Syft) → Vuln Scan (Grype)
 ```
 
-### ¿Por qué pinear a SHA en lugar de a tag?
+## Próximos pasos recomendados
 
-Un tag como `@v4` puede ser movido por el mantenedor (incluso por un atacante que comprometa su cuenta). Un SHA es **inmutable**: `@11bd71901bbe5b1630ceea73d27597364c9af683` siempre apunta exactamente al mismo código.
+### 1. Aplicar esto a tu repositorio real
 
-### ¿Qué verificará el bot?
+```bash
+# Copia los workflows a tu proyecto
+cp .github/workflows/sast.yml tu-proyecto/.github/workflows/
+cp .github/workflows/container-scan.yml tu-proyecto/.github/workflows/
+# ... etc.
+```
 
-- ✅ Que existe `.github/workflows/sbom.yml`
-- ✅ Que el fichero contiene `syft`, `cdxgen` o `cyclonedx`
+### 2. Profundizar en cada herramienta
 
-### ¿Qué pasará después?
+- **Semgrep**: escribe reglas custom para tu stack específico
+- **Trivy**: configura políticas de severidad por entorno (dev vs prod)
+- **Checkov**: añade reglas custom para tus políticas de compliance
+- **gitleaks**: personaliza `.gitleaks.toml` para tus patrones de secretos
 
-¡Has completado el tutorial! 🎉
+### 3. Añadir DAST (Dynamic Application Security Testing)
+
+Los tests anteriores son estáticos. Para análisis dinámico:
+- **OWASP ZAP**: escaneo de la app en ejecución
+- **Nuclei**: templates de vulnerabilidades conocidas
+
+### 4. Integrar con tu proceso de PR
+
+Configura los workflows para bloquear merges si hay vulnerabilidades críticas:
+```yaml
+# En .github/branch_protection.json
+"required_status_checks": {
+  "strict": true,
+  "contexts": ["Semgrep SAST", "Trivy Scan", "Checkov IaC"]
+}
+```
+
+## Recursos para continuar
+
+- [OWASP Top 10](https://owasp.org/Top10/) — las vulnerabilidades más comunes
+- [Semgrep Rules Registry](https://semgrep.dev/r) — 3000+ reglas de la comunidad
+- [Trivy documentation](https://aquasecurity.github.io/trivy/) — configuración avanzada
+- [Checkov documentation](https://www.checkov.io/1.Welcome/Quick%20Start.html) — reglas custom
+- [SLSA framework](https://slsa.dev) — supply chain security framework de Google
 
 ---
-*Paso 10 de 10 · Tutorial Avanzado de DevSecOps*
+
+*¡Bien hecho! Ahora tienes las herramientas para construir pipelines de seguridad de nivel enterprise.*
