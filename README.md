@@ -1,70 +1,78 @@
-## Paso 9 de 10 — Política de excepciones con gobernanza
+## Paso 10 de 10 — SBOM y seguridad de cadena de suministro
 
 ### ¿Por qué importa esto?
 
-Las supresiones en el código (`# nosemgrep:`) son buenas para casos individuales, pero en un equipo de 20+ personas pueden proliferar sin control. Un fichero centralizado de excepciones (`exceptions.yml`) permite:
+El ataque a SolarWinds (2020) demostró que el mayor riesgo no siempre está en tu código, sino en tus dependencias. Un **SBOM (Software Bill of Materials)** es un inventario completo de todos los componentes de tu aplicación — librerías, versiones, licencias, y sus CVEs conocidos.
 
-- **Auditoría**: saber qué está suprimido en toda la base de código
-- **Caducidad**: las excepciones tienen fecha de revisión obligatoria
-- **Trazabilidad**: cada excepción tiene owner y ticket de aprobación
-- **Automatización**: un workflow puede alertar cuando una excepción caduca
-
-Este fichero es lo que el equipo de seguridad revisa en cada auditoría.
+Es obligatorio en contratos con el gobierno de EE.UU. desde 2021 (EO 14028) y cada vez más requerido en auditorías de enterprise.
 
 ### Tu tarea
 
-Crea el fichero `exceptions.yml` en la raíz del repositorio.
-
-Mínimo requerido para que el bot lo acepte (al menos una entrada con todos los campos):
+Crea `.github/workflows/sbom.yml`:
 
 ```yaml
-# exceptions.yml — Política centralizada de excepciones de seguridad
-# Proceso de aprobación: abrir ticket SEC-XXX → revisión de security team → merge
-# Revisión periódica: las entradas con expires pasado deben renovarse o eliminarse
+name: SBOM — Software Bill of Materials
 
-exceptions:
-  - rule_id: "python.lang.security.insecure-hash-algorithms"
-    justification: |
-      hash_password() en src/app.py usa MD5 para caché de sesiones anónimas.
-      No almacena contraseñas de usuario (bcrypt en auth_service.py).
-      Riesgo evaluado: BAJO. Impacto en confidencialidad: ninguno.
-    owner: "security-team@empresa.com"
-    ticket: "SEC-042"
-    created: "2026-04-30"
-    expires: "2026-10-30"
-    status: "approved"
-    reviewed_by: "alice@empresa.com"
-    affected_files:
-      - "src/app.py"
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'requirements.txt'
+      - 'Dockerfile'
+      - 'src/**'
+  release:
+    types: [published]
 
-  - rule_id: "python.flask.security.audit.app-run-param-debug-enabled"
-    justification: |
-      El flag DEBUG=True en app.py se elimina en el Paso 2 del roadmap de
-      remediación. Excepciones temporal hasta completar SEC-089.
-    owner: "backend-team@empresa.com"
-    ticket: "SEC-089"
-    created: "2026-04-30"
-    expires: "2026-06-30"
-    status: "pending-fix"
-    reviewed_by: "security-team@empresa.com"
-    affected_files:
-      - "src/app.py"
+permissions:
+  contents: write    # para subir el SBOM como release asset
+  packages: write    # para publicar en GitHub Packages
+
+jobs:
+  sbom:
+    name: Generate SBOM with Syft
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # ✅ Buena práctica: actions pineadas a SHA
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Instalar Syft
+        uses: anchore/sbom-action/download-syft@v0.18.0
+
+      - name: Generar SBOM del repositorio
+        run: |
+          syft . \
+            --output cyclonedx-json=sbom-source.json \
+            --output spdx-json=sbom-spdx.json \
+            --output table
+
+      - name: Subir SBOM como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: |
+            sbom-source.json
+            sbom-spdx.json
+          retention-days: 90
+
+      - name: Escanear SBOM con Grype (vulnerabilidades en dependencias)
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+          grype sbom:sbom-source.json --fail-on high
 ```
 
-Puedes añadir tus propias entradas. El bot solo verifica que existan los campos requeridos.
+### ¿Por qué pinear a SHA en lugar de a tag?
+
+Un tag como `@v4` puede ser movido por el mantenedor (incluso por un atacante que comprometa su cuenta). Un SHA es **inmutable**: `@11bd71901bbe5b1630ceea73d27597364c9af683` siempre apunta exactamente al mismo código.
 
 ### ¿Qué verificará el bot?
 
-El fichero `exceptions.yml` debe contener todos estos campos:
-- ✅ `rule_id:`
-- ✅ `justification:`
-- ✅ `owner:`
-- ✅ `expires:`
-- ✅ `status:`
+- ✅ Que existe `.github/workflows/sbom.yml`
+- ✅ Que el fichero contiene `syft`, `cdxgen` o `cyclonedx`
 
 ### ¿Qué pasará después?
 
-¡Último paso! En el **Paso 10** añadirás generación de SBOM (Software Bill of Materials) para tener visibilidad total de las dependencias de la aplicación.
+¡Has completado el tutorial! 🎉
 
 ---
-*Paso 9 de 10 · Tutorial Avanzado de DevSecOps*
+*Paso 10 de 10 · Tutorial Avanzado de DevSecOps*
