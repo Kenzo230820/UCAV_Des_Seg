@@ -1,68 +1,71 @@
-## Paso 2 de 10 — Hardening del pipeline CI/CD
+## Paso 3 de 10 — Escaneo de contenedores
 
 ### ¿Por qué importa esto?
 
-Un pipeline de seguridad mal configurado puede ser el vector de ataque. Los workflows de GitHub Actions pueden tener **permisos excesivos**, **sin límite de tiempo** (lo que permite que un atacante mantenga un runner comprometido durante horas) o usar versiones de actions que podrían cambiar bajo tus pies.
+Las imágenes Docker acumulan CVEs con el tiempo. Una imagen base de hace 2 años puede tener cientos de vulnerabilidades conocidas. Sin un escáner automatizado, puedes estar desplegando vulnerabilidades críticas sin saberlo.
 
-El OWASP Top 10 CI/CD incluye como riesgo #1 los flujos con permisos excesivos.
+**Dato real**: el 58% de las imágenes en Docker Hub públicas tienen al menos una vulnerabilidad crítica (Sysdig 2024).
 
 ### Situación actual
 
-Tu `sast.yml` actual funciona, pero tiene tres problemas de hardening:
-
-1. **Sin `permissions` explícitas** → por defecto el token tiene permisos de escritura en todo el repo
-2. **Sin `timeout-minutes`** → un build colgado puede correr indefinidamente (coste y riesgo)
-3. **Actions sin versión fija a SHA** → `@v4` puede cambiar en cualquier momento si el mantenedor hace push al tag
+El `Dockerfile` de este proyecto usa `ubuntu:18.04` — una imagen con **soporte terminado en abril 2023** que acumula CVEs sin parchear. Además tiene secretos en variables de entorno y se ejecuta como root. Pero primero hay que **verlo** antes de corregirlo.
 
 ### Tu tarea
 
-Actualiza `.github/workflows/sast.yml` con estas tres mejoras:
+Crea `.github/workflows/container-scan.yml` para que Trivy escanee la imagen en cada push:
 
 ```yaml
-name: SAST — Análisis estático
+name: Container Security Scan
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'src/**'
+      - 'requirements.txt'
   pull_request:
     branches: [main]
 
-# ✅ MEJORA 1: Mínimo de permisos necesarios (principle of least privilege)
 permissions:
   contents: read
-  security-events: write   # necesario para subir resultados a Code Scanning
+  security-events: write
 
 jobs:
-  semgrep:
-    name: Semgrep SAST
+  trivy:
+    name: Trivy container scan
     runs-on: ubuntu-latest
-    # ✅ MEJORA 2: Timeout explícito — mata el job si tarda más de 15 minutos
-    timeout-minutes: 15
-    container:
-      image: semgrep/semgrep:latest
+    timeout-minutes: 20
     steps:
-      # ✅ MEJORA 3: Pinear action a SHA completo (inmutable, no puede cambiar)
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-      - name: Ejecutar Semgrep
-        run: semgrep scan --config=auto --error src/
-```
 
-### ¿Cómo obtener el SHA de una action?
+      - name: Build image
+        run: docker build -t tutorial-app:${{ github.sha }} .
 
-```bash
-# En la página de GitHub de la action → Releases → clic en el tag → copia el SHA del commit
-# O desde la terminal:
-gh api repos/actions/checkout/git/refs/tags/v4 --jq '.object.sha'
+      - name: Trivy — escanear imagen
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a8  # 0.28.0
+        with:
+          image-ref: tutorial-app:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+
+      - name: Subir resultados a Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@45775bd8235c68ba998cffa5171334d58593da1a  # v3.28.0
+        with:
+          sarif_file: trivy-results.sarif
 ```
 
 ### ¿Qué verificará el bot?
 
-- ✅ Que `sast.yml` contiene `permissions:`
-- ✅ Que `sast.yml` contiene `timeout-minutes:`
+- ✅ Que existe `.github/workflows/container-scan.yml`
+- ✅ Que el fichero contiene `trivy`, `grype` o `snyk`
 
 ### ¿Qué pasará después?
 
-En el **Paso 3** añadirás escaneo de seguridad al contenedor Docker de la aplicación.
+Trivy encontrará CVEs críticos — el workflow fallará (❌). En el **Paso 4** corregirás los 4 problemas del Dockerfile.
 
 ---
-*Paso 2 de 10 · Tutorial Avanzado de DevSecOps*
+*Paso 3 de 10 · Tutorial Avanzado de DevSecOps*
