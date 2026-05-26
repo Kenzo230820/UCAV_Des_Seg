@@ -1,33 +1,36 @@
 # Tutorial Avanzado de DevSecOps — Dockerfile con problemas intencionales
 # Este fichero tiene 4 problemas de seguridad que deberás corregir en el Paso 4.
+# ✅ CORRECCIÓN 1: Imagen base con soporte activo
+FROM python:3.12-slim
 
-# ❌ PROBLEMA 1: Imagen base con CVEs conocidos (EOL desde abril 2023)
-FROM ubuntu:18.04
-
-# Instalar dependencias del sistema
+# Instalar solo lo necesario, sin caché
 RUN apt-get update && \
-    apt-get install -y python3 python3-pip curl && \
+    apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# ❌ PROBLEMA 2: Secretos en variables de entorno del contenedor
-# Quedan grabados en el historial de layers y visibles con: docker inspect
-ENV API_KEY=sk-prod-1234567890abcdef9876543210fedcba
-ENV DB_PASSWORD=SuperSecretPassword123!
-ENV INTERNAL_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret
-
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# ❌ PROBLEMA 3: Sin directiva USER — el proceso se ejecuta como root
-# Si un atacante explota la app, tiene acceso root al contenedor
+# ✅ CORRECCIÓN 2: Crear usuario sin privilegios
+RUN addgroup --system appgroup && \
+    adduser --system --ingroup appgroup appuser && \
+    chown -R appuser:appgroup /app
 
-# ❌ PROBLEMA 4: Sin HEALTHCHECK
-# Kubernetes/Docker no sabe si la app está realmente funcionando
+# ✅ CORRECCIÓN 3: Ejecutar como usuario sin privilegios (no root)
+USER appuser
+
+# ✅ CORRECCIÓN 4: Healthcheck para que Kubernetes sepa el estado real
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:5000/health || exit 1
 
 EXPOSE 5000
 
-CMD ["python3", "src/app.py"]
+CMD ["python", "src/app.py"]
+
+# NOTA: Las variables de entorno (API_KEY, DB_PASSWORD) se pasan en runtime:
+#   docker run -e API_KEY=... -e DB_PASSWORD=... tutorial-app
+#   O desde un orquestador (Kubernetes Secret, Azure Key Vault CSI driver)
