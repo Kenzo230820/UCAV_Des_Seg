@@ -1,0 +1,48 @@
+name: SBOM — Software Bill of Materials
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'requirements.txt'
+      - 'Dockerfile'
+      - 'src/**'
+  release:
+    types: [published]
+
+permissions:
+  contents: write    # para subir el SBOM como release asset
+  packages: write    # para publicar en GitHub Packages
+
+jobs:
+  sbom:
+    name: Generate SBOM with Syft
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # ✅ Buena práctica: actions pineadas a SHA
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Instalar Syft
+        uses: anchore/sbom-action/download-syft@v0.18.0
+
+      - name: Generar SBOM del repositorio
+        run: |
+          syft . \
+            --output cyclonedx-json=sbom-source.json \
+            --output spdx-json=sbom-spdx.json \
+            --output table
+
+      - name: Subir SBOM como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: |
+            sbom-source.json
+            sbom-spdx.json
+          retention-days: 90
+
+      - name: Escanear SBOM con Grype (vulnerabilidades en dependencias)
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+          grype sbom:sbom-source.json --fail-on high
