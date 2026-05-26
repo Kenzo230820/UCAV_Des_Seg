@@ -1,70 +1,76 @@
-## Paso 4 de 10 — Corrección del Dockerfile
+## Paso 5 de 10 — Escaneo de Infraestructura como Código (IaC)
 
 ### ¿Por qué importa esto?
 
-Un contenedor mal configurado amplifica cualquier vulnerabilidad de la aplicación. Si la app tiene un bug de ejecución remota de código y el proceso corre como root, el atacante tiene control total del host. Los 4 problemas de este Dockerfile son los más comunes en producción.
+Los errores de configuración en Terraform, CloudFormation o Kubernetes YAML son la causa del 80% de los incidentes de seguridad en cloud (Gartner). A diferencia del código de aplicación, una misconfiguration en IaC puede exponer datos de todos los usuarios con un solo `terraform apply`.
+
+**Ejemplos reales**: Capital One (2019, S3 mal configurado), Twitch (2021, bucket público).
 
 ### Situación actual
 
-`Dockerfile` tiene estos 4 problemas:
+`infra/main.tf` tiene **5 misconfigurations** que Checkov detectará:
 
-| # | Problema | Riesgo |
+| Recurso | Problema | Checkov ID |
 |---|---|---|
-| 1 | `FROM ubuntu:18.04` — EOL desde 2023 | CVEs sin parchear |
-| 2 | `ENV API_KEY=sk-prod-...` — secretos en layers | Visibles con `docker inspect` |
-| 3 | Sin `USER` — corre como root | Escalada de privilegios trivial |
-| 4 | Sin `HEALTHCHECK` | Kubernetes no detecta fallos de la app |
+| `aws_s3_bucket_acl` | ACL `public-read` | CKV_AWS_20 |
+| `aws_s3_bucket` | Sin versioning | CKV_AWS_21 |
+| `aws_db_instance` | `publicly_accessible = true` | CKV_AWS_17 |
+| `aws_db_instance` | `storage_encrypted = false` | CKV_AWS_16 |
+| `aws_security_group` | Ingress 0.0.0.0/0 en todos los puertos | CKV_AWS_25 |
 
 ### Tu tarea
 
-Reemplaza el contenido de `Dockerfile` con esta versión corregida:
+Crea `.github/workflows/iac-scan.yml`:
 
-```dockerfile
-# ✅ CORRECCIÓN 1: Imagen base con soporte activo
-FROM python:3.12-slim
+```yaml
+name: IaC Security Scan
 
-# Instalar solo lo necesario, sin caché
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl && \
-    rm -rf /var/lib/apt/lists/*
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/**'
+      - '**.tf'
+      - '**.tfvars'
+  pull_request:
+    branches: [main]
 
-WORKDIR /app
+permissions:
+  contents: read
+  security-events: write
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+jobs:
+  checkov:
+    name: Checkov IaC scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
-COPY . .
+      - name: Checkov — escanear Terraform
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra/
+          framework: terraform
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+          soft_fail: false
 
-# ✅ CORRECCIÓN 2: Crear usuario sin privilegios
-RUN addgroup --system appgroup && \
-    adduser --system --ingroup appgroup appuser && \
-    chown -R appuser:appgroup /app
-
-# ✅ CORRECCIÓN 3: Ejecutar como usuario sin privilegios (no root)
-USER appuser
-
-# ✅ CORRECCIÓN 4: Healthcheck para que Kubernetes sepa el estado real
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:5000/health || exit 1
-
-EXPOSE 5000
-
-CMD ["python", "src/app.py"]
-
-# NOTA: Las variables de entorno (API_KEY, DB_PASSWORD) se pasan en runtime:
-#   docker run -e API_KEY=... -e DB_PASSWORD=... tutorial-app
-#   O desde un orquestador (Kubernetes Secret, Azure Key Vault CSI driver)
+      - name: Subir resultados a Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@45775bd8235c68ba998cffa5171334d58593da1a  # v3.28.0
+        with:
+          sarif_file: checkov-results.sarif
 ```
 
 ### ¿Qué verificará el bot?
 
-- ✅ Que `Dockerfile` contiene `USER` (directiva de usuario no-root)
-- ✅ Que `Dockerfile` **no** contiene `ENV API_KEY=` ni `ENV DB_PASSWORD=` ni `ENV INTERNAL_TOKEN=`
-- ✅ Que `Dockerfile` contiene `HEALTHCHECK`
+- ✅ Que existe `.github/workflows/iac-scan.yml`
+- ✅ Que el fichero contiene `checkov`, `tfsec` o `kics`
 
 ### ¿Qué pasará después?
 
-En el **Paso 5** añadirás escaneo de seguridad a la infraestructura Terraform.
+Checkov detectará las 5 misconfigurations — el workflow fallará (❌). En el **Paso 6** corregirás los 3 problemas más críticos del fichero Terraform.
 
 ---
-*Paso 4 de 10 · Tutorial Avanzado de DevSecOps*
+*Paso 5 de 10 · Tutorial Avanzado de DevSecOps*
