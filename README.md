@@ -1,51 +1,70 @@
-## Paso 8 de 10 — Gestión de falsos positivos con gobernanza
+## Paso 9 de 10 — Política de excepciones con gobernanza
 
 ### ¿Por qué importa esto?
 
-No todos los hallazgos de un escáner son vulnerabilidades reales. Suprimir un hallazgo sin justificación es un riesgo: nadie sabrá por qué se ignoró. Una supresión bien gestionada documenta:
+Las supresiones en el código (`# nosemgrep:`) son buenas para casos individuales, pero en un equipo de 20+ personas pueden proliferar sin control. Un fichero centralizado de excepciones (`exceptions.yml`) permite:
 
-- **Qué** se está suprimiendo (rule ID)
-- **Por qué** no es un riesgo real en este contexto
-- **Quién** lo aprobó (equipo de seguridad)
-- **Cuándo** caduca la excepción (para revisarla)
+- **Auditoría**: saber qué está suprimido en toda la base de código
+- **Caducidad**: las excepciones tienen fecha de revisión obligatoria
+- **Trazabilidad**: cada excepción tiene owner y ticket de aprobación
+- **Automatización**: un workflow puede alertar cuando una excepción caduca
 
-Sin este proceso, las supresiones se acumulan sin revisión y crean deuda de seguridad invisible.
-
-### Situación actual
-
-Semgrep detecta `hash_password()` como uso de MD5 (algoritmo inseguro). Supongamos que, tras análisis, el equipo de seguridad determina que esta función se usa solo para caché de sesiones no-críticas, no para contraseñas de usuarios. Es un **falso positivo en contexto** que debe suprimirse con justificación.
+Este fichero es lo que el equipo de seguridad revisa en cada auditoría.
 
 ### Tu tarea
 
-Edita `src/app.py` y añade la supresión estructurada encima de la función `hash_password`:
+Crea el fichero `exceptions.yml` en la raíz del repositorio.
 
-```python
-# ==============================================================
-# SUPRESIÓN APROBADA — Equipo de Seguridad
-# Ticket: SEC-042
-# Tipo: Falso positivo en contexto
-# Motivo: hash_password() se usa únicamente para caché de
-#   sesiones anónimas, no para almacenar contraseñas de usuario.
-#   El hash de contraseñas usa bcrypt en auth_service.py (línea 87).
-# Aprobado por: security-team@empresa.com
-# Creado: 2026-04-30 | Expira: 2026-10-30
-# ==============================================================
-# nosemgrep: python.lang.security.insecure-hash-algorithms  # SEC-042
-def hash_password(password: str) -> str:
-    return hashlib.md5(password.encode()).hexdigest()
+Mínimo requerido para que el bot lo acepte (al menos una entrada con todos los campos):
+
+```yaml
+# exceptions.yml — Política centralizada de excepciones de seguridad
+# Proceso de aprobación: abrir ticket SEC-XXX → revisión de security team → merge
+# Revisión periódica: las entradas con expires pasado deben renovarse o eliminarse
+
+exceptions:
+  - rule_id: "python.lang.security.insecure-hash-algorithms"
+    justification: |
+      hash_password() en src/app.py usa MD5 para caché de sesiones anónimas.
+      No almacena contraseñas de usuario (bcrypt en auth_service.py).
+      Riesgo evaluado: BAJO. Impacto en confidencialidad: ninguno.
+    owner: "security-team@empresa.com"
+    ticket: "SEC-042"
+    created: "2026-04-30"
+    expires: "2026-10-30"
+    status: "approved"
+    reviewed_by: "alice@empresa.com"
+    affected_files:
+      - "src/app.py"
+
+  - rule_id: "python.flask.security.audit.app-run-param-debug-enabled"
+    justification: |
+      El flag DEBUG=True en app.py se elimina en el Paso 2 del roadmap de
+      remediación. Excepciones temporal hasta completar SEC-089.
+    owner: "backend-team@empresa.com"
+    ticket: "SEC-089"
+    created: "2026-04-30"
+    expires: "2026-06-30"
+    status: "pending-fix"
+    reviewed_by: "security-team@empresa.com"
+    affected_files:
+      - "src/app.py"
 ```
 
-El formato `# nosemgrep: <rule-id>` le dice a Semgrep que ignore esa línea.
-El comentario estructurado encima provee el contexto de gobernanza.
+Puedes añadir tus propias entradas. El bot solo verifica que existan los campos requeridos.
 
 ### ¿Qué verificará el bot?
 
-- ✅ Que `src/app.py` contiene `nosemgrep:`
-- ✅ Que existe una referencia de ticket (`SEC-` seguido de dígitos) en el fichero
+El fichero `exceptions.yml` debe contener todos estos campos:
+- ✅ `rule_id:`
+- ✅ `justification:`
+- ✅ `owner:`
+- ✅ `expires:`
+- ✅ `status:`
 
 ### ¿Qué pasará después?
 
-En el **Paso 9** formalizarás las excepciones en un fichero de política con gobernanza centralizada.
+¡Último paso! En el **Paso 10** añadirás generación de SBOM (Software Bill of Materials) para tener visibilidad total de las dependencias de la aplicación.
 
 ---
-*Paso 8 de 10 · Tutorial Avanzado de DevSecOps*
+*Paso 9 de 10 · Tutorial Avanzado de DevSecOps*
