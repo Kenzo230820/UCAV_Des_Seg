@@ -1,0 +1,31 @@
+# exceptions.yml — Política centralizada de excepciones de seguridad
+# Proceso de aprobación: abrir ticket SEC-XXX → revisión de security team → merge
+# Revisión periódica: las entradas con expires pasado deben renovarse o eliminarse
+
+exceptions:
+  - rule_id: "python.lang.security.insecure-hash-algorithms"
+    justification: |
+      hash_password() en src/app.py usa MD5 para caché de sesiones anónimas.
+      No almacena contraseñas de usuario (bcrypt en auth_service.py).
+      Riesgo evaluado: BAJO. Impacto en confidencialidad: ninguno.
+    owner: "security-team@empresa.com"
+    ticket: "SEC-042"
+    created: "2026-04-30"
+    expires: "2026-10-30"
+    status: "approved"
+    reviewed_by: "alice@empresa.com"
+    affected_files:
+      - "src/app.py"
+
+  - rule_id: "python.flask.security.audit.app-run-param-debug-enabled"
+    justification: |
+      El flag DEBUG=True en app.py se elimina en el Paso 2 del roadmap de
+      remediación. Excepciones temporal hasta completar SEC-089.
+    owner: "backend-team@empresa.com"
+    ticket: "SEC-089"
+    created: "2026-04-30"
+    expires: "2026-06-30"
+    status: "pending-fix"
+    reviewed_by: "security-team@empresa.com"
+    affected_files:
+      - "src/app.py"
