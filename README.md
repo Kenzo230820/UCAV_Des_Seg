@@ -1,86 +1,63 @@
-## Paso 6 de 10 — Corrección de misconfigurations en Terraform
+## Paso 7 de 10 — Detección de secretos en código
 
 ### ¿Por qué importa esto?
 
-Corregir los problemas en Terraform **antes** de aplicar los cambios es el propósito del IaC scanning. En este paso simulas el flujo real: el escáner encontró problemas → los corriges en código → el escáner vuelve a pasar → `terraform apply`.
+Los secretos en código son la causa #1 de brechas de seguridad en la nube. Una API key subida a GitHub puede ser detectada por bots en menos de 1 minuto. Los robots de AWS buscan activamente credenciales en GitHub y crean instancias EC2 para minería de criptomonedas.
+
+**Problema adicional**: aunque borres el secreto en el siguiente commit, **sigue visible en el historial de Git**. Hay que revocar la credencial siempre.
+
+### Situación actual
+
+`src/app.py` todavía contiene credenciales hardcodeadas que acabas de dejar en el historial de Git:
+- `EXTERNAL_API_KEY = 'sk-prod-1234567890abcdef...'`
+- `app.config['SECRET_KEY'] = 'mi-clave-super-secreta...'`
+
+gitleaks las detectará al escanear el historial completo del repositorio.
 
 ### Tu tarea
 
-Edita `infra/main.tf` aplicando estos 3 cambios:
+Crea `.github/workflows/secrets-scan.yml`:
 
-**Cambio 1 — Eliminar ACL pública del bucket S3:**
-```hcl
-# ELIMINAR este bloque completo:
-resource "aws_s3_bucket_acl" "app_data" {
-  bucket = aws_s3_bucket.app_data.id
-  acl    = "public-read"
-}
+```yaml
+name: Secrets Scan
 
-# AÑADIR en su lugar — bucket privado con versioning y cifrado:
-resource "aws_s3_bucket_versioning" "app_data" {
-  bucket = aws_s3_bucket.app_data.id
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "app_data" {
-  bucket = aws_s3_bucket.app_data.id
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "aws:kms"
-    }
-  }
-}
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: gitleaks secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0   # escanear todo el historial, no solo el último commit
+
+      - name: gitleaks — escanear historial completo
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          config-path: .gitleaks.toml
 ```
 
-**Cambio 2 — Base de datos privada y cifrada:**
-```hcl
-resource "aws_db_instance" "app_db" {
-  # ... resto de configuración sin cambios ...
-
-  # ✅ Corregido: no accesible desde internet
-  publicly_accessible = false
-
-  # ✅ Corregido: almacenamiento cifrado
-  storage_encrypted = true
-  kms_key_id        = aws_kms_key.rds.arn
-}
-```
-
-**Cambio 3 — Security group con reglas específicas:**
-```hcl
-resource "aws_security_group" "web_sg" {
-  # ... nombre y descripción sin cambios ...
-
-  # ✅ Corregido: solo HTTPS desde internet
-  ingress {
-    description = "HTTPS desde internet"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Sin regla de ingress para el puerto 0-65535
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-```
+> ⚠️ gitleaks **fallará** porque el historial de este repositorio tiene secretos. Eso es esperado — en el siguiente paso aprenderás a gestionarlos correctamente.
 
 ### ¿Qué verificará el bot?
 
-- ✅ Que `infra/main.tf` **no** contiene `publicly_accessible = true`
-- ✅ Que `infra/main.tf` **no** contiene `storage_encrypted = false`
-- ✅ Que `infra/main.tf` **no** contiene `acl    = "public-read"`
+- ✅ Que existe `.github/workflows/secrets-scan.yml`
+- ✅ Que el fichero contiene `gitleaks`, `trufflehog` o `detect-secrets`
 
 ### ¿Qué pasará después?
 
-En el **Paso 7** añadirás detección de secretos para proteger el historial de Git.
+En el **Paso 8** aprenderás a gestionar los falsos positivos y a suprimir hallazgos con gobernanza correcta.
 
 ---
-*Paso 6 de 10 · Tutorial Avanzado de DevSecOps*
+*Paso 7 de 10 · Tutorial Avanzado de DevSecOps*
