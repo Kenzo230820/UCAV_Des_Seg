@@ -1,0 +1,38 @@
+name: IaC Security Scan
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/**'
+      - '**.tf'
+      - '**.tfvars'
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  checkov:
+    name: Checkov IaC scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Checkov — escanear Terraform
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra/
+          framework: terraform
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+          soft_fail: false
+
+      - name: Subir resultados a Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@45775bd8235c68ba998cffa5171334d58593da1a  # v3.28.0
+        with:
+          sarif_file: checkov-results.sarif
