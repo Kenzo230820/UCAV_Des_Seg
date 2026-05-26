@@ -6,16 +6,21 @@ on:
   pull_request:
     branches: [main]
 
+# ✅ MEJORA 1: Mínimo de permisos necesarios (principle of least privilege)
 permissions:
   contents: read
+  security-events: write   # necesario para subir resultados a Code Scanning
 
 jobs:
   semgrep:
     name: Semgrep SAST
     runs-on: ubuntu-latest
+    # ✅ MEJORA 2: Timeout explícito — mata el job si tarda más de 15 minutos
+    timeout-minutes: 15
     container:
       image: semgrep/semgrep:latest
     steps:
-      - uses: actions/checkout@v4
+      # ✅ MEJORA 3: Pinear action a SHA completo (inmutable, no puede cambiar)
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - name: Ejecutar Semgrep
         run: semgrep scan --config=auto --error src/
