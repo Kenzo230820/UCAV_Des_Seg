@@ -1,71 +1,70 @@
-## Paso 3 de 10 — Escaneo de contenedores
+## Paso 4 de 10 — Corrección del Dockerfile
 
 ### ¿Por qué importa esto?
 
-Las imágenes Docker acumulan CVEs con el tiempo. Una imagen base de hace 2 años puede tener cientos de vulnerabilidades conocidas. Sin un escáner automatizado, puedes estar desplegando vulnerabilidades críticas sin saberlo.
-
-**Dato real**: el 58% de las imágenes en Docker Hub públicas tienen al menos una vulnerabilidad crítica (Sysdig 2024).
+Un contenedor mal configurado amplifica cualquier vulnerabilidad de la aplicación. Si la app tiene un bug de ejecución remota de código y el proceso corre como root, el atacante tiene control total del host. Los 4 problemas de este Dockerfile son los más comunes en producción.
 
 ### Situación actual
 
-El `Dockerfile` de este proyecto usa `ubuntu:18.04` — una imagen con **soporte terminado en abril 2023** que acumula CVEs sin parchear. Además tiene secretos en variables de entorno y se ejecuta como root. Pero primero hay que **verlo** antes de corregirlo.
+`Dockerfile` tiene estos 4 problemas:
+
+| # | Problema | Riesgo |
+|---|---|---|
+| 1 | `FROM ubuntu:18.04` — EOL desde 2023 | CVEs sin parchear |
+| 2 | `ENV API_KEY=sk-prod-...` — secretos en layers | Visibles con `docker inspect` |
+| 3 | Sin `USER` — corre como root | Escalada de privilegios trivial |
+| 4 | Sin `HEALTHCHECK` | Kubernetes no detecta fallos de la app |
 
 ### Tu tarea
 
-Crea `.github/workflows/container-scan.yml` para que Trivy escanee la imagen en cada push:
+Reemplaza el contenido de `Dockerfile` con esta versión corregida:
 
-```yaml
-name: Container Security Scan
+```dockerfile
+# ✅ CORRECCIÓN 1: Imagen base con soporte activo
+FROM python:3.12-slim
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'Dockerfile'
-      - 'src/**'
-      - 'requirements.txt'
-  pull_request:
-    branches: [main]
+# Instalar solo lo necesario, sin caché
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
 
-permissions:
-  contents: read
-  security-events: write
+WORKDIR /app
 
-jobs:
-  trivy:
-    name: Trivy container scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-      - name: Build image
-        run: docker build -t tutorial-app:${{ github.sha }} .
+COPY . .
 
-      - name: Trivy — escanear imagen
-        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a8  # 0.28.0
-        with:
-          image-ref: tutorial-app:${{ github.sha }}
-          format: sarif
-          output: trivy-results.sarif
-          severity: CRITICAL,HIGH
-          exit-code: '1'
+# ✅ CORRECCIÓN 2: Crear usuario sin privilegios
+RUN addgroup --system appgroup && \
+    adduser --system --ingroup appgroup appuser && \
+    chown -R appuser:appgroup /app
 
-      - name: Subir resultados a Code Scanning
-        if: always()
-        uses: github/codeql-action/upload-sarif@45775bd8235c68ba998cffa5171334d58593da1a  # v3.28.0
-        with:
-          sarif_file: trivy-results.sarif
+# ✅ CORRECCIÓN 3: Ejecutar como usuario sin privilegios (no root)
+USER appuser
+
+# ✅ CORRECCIÓN 4: Healthcheck para que Kubernetes sepa el estado real
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:5000/health || exit 1
+
+EXPOSE 5000
+
+CMD ["python", "src/app.py"]
+
+# NOTA: Las variables de entorno (API_KEY, DB_PASSWORD) se pasan en runtime:
+#   docker run -e API_KEY=... -e DB_PASSWORD=... tutorial-app
+#   O desde un orquestador (Kubernetes Secret, Azure Key Vault CSI driver)
 ```
 
 ### ¿Qué verificará el bot?
 
-- ✅ Que existe `.github/workflows/container-scan.yml`
-- ✅ Que el fichero contiene `trivy`, `grype` o `snyk`
+- ✅ Que `Dockerfile` contiene `USER` (directiva de usuario no-root)
+- ✅ Que `Dockerfile` **no** contiene `ENV API_KEY=` ni `ENV DB_PASSWORD=` ni `ENV INTERNAL_TOKEN=`
+- ✅ Que `Dockerfile` contiene `HEALTHCHECK`
 
 ### ¿Qué pasará después?
 
-Trivy encontrará CVEs críticos — el workflow fallará (❌). En el **Paso 4** corregirás los 4 problemas del Dockerfile.
+En el **Paso 5** añadirás escaneo de seguridad a la infraestructura Terraform.
 
 ---
-*Paso 3 de 10 · Tutorial Avanzado de DevSecOps*
+*Paso 4 de 10 · Tutorial Avanzado de DevSecOps*
