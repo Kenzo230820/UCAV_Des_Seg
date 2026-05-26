@@ -1,63 +1,51 @@
-## Paso 7 de 10 — Detección de secretos en código
+## Paso 8 de 10 — Gestión de falsos positivos con gobernanza
 
 ### ¿Por qué importa esto?
 
-Los secretos en código son la causa #1 de brechas de seguridad en la nube. Una API key subida a GitHub puede ser detectada por bots en menos de 1 minuto. Los robots de AWS buscan activamente credenciales en GitHub y crean instancias EC2 para minería de criptomonedas.
+No todos los hallazgos de un escáner son vulnerabilidades reales. Suprimir un hallazgo sin justificación es un riesgo: nadie sabrá por qué se ignoró. Una supresión bien gestionada documenta:
 
-**Problema adicional**: aunque borres el secreto en el siguiente commit, **sigue visible en el historial de Git**. Hay que revocar la credencial siempre.
+- **Qué** se está suprimiendo (rule ID)
+- **Por qué** no es un riesgo real en este contexto
+- **Quién** lo aprobó (equipo de seguridad)
+- **Cuándo** caduca la excepción (para revisarla)
+
+Sin este proceso, las supresiones se acumulan sin revisión y crean deuda de seguridad invisible.
 
 ### Situación actual
 
-`src/app.py` todavía contiene credenciales hardcodeadas que acabas de dejar en el historial de Git:
-- `EXTERNAL_API_KEY = 'sk-prod-1234567890abcdef...'`
-- `app.config['SECRET_KEY'] = 'mi-clave-super-secreta...'`
-
-gitleaks las detectará al escanear el historial completo del repositorio.
+Semgrep detecta `hash_password()` como uso de MD5 (algoritmo inseguro). Supongamos que, tras análisis, el equipo de seguridad determina que esta función se usa solo para caché de sesiones no-críticas, no para contraseñas de usuarios. Es un **falso positivo en contexto** que debe suprimirse con justificación.
 
 ### Tu tarea
 
-Crea `.github/workflows/secrets-scan.yml`:
+Edita `src/app.py` y añade la supresión estructurada encima de la función `hash_password`:
 
-```yaml
-name: Secrets Scan
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-permissions:
-  contents: read
-
-jobs:
-  gitleaks:
-    name: gitleaks secret scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-        with:
-          fetch-depth: 0   # escanear todo el historial, no solo el último commit
-
-      - name: gitleaks — escanear historial completo
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          config-path: .gitleaks.toml
+```python
+# ==============================================================
+# SUPRESIÓN APROBADA — Equipo de Seguridad
+# Ticket: SEC-042
+# Tipo: Falso positivo en contexto
+# Motivo: hash_password() se usa únicamente para caché de
+#   sesiones anónimas, no para almacenar contraseñas de usuario.
+#   El hash de contraseñas usa bcrypt en auth_service.py (línea 87).
+# Aprobado por: security-team@empresa.com
+# Creado: 2026-04-30 | Expira: 2026-10-30
+# ==============================================================
+# nosemgrep: python.lang.security.insecure-hash-algorithms  # SEC-042
+def hash_password(password: str) -> str:
+    return hashlib.md5(password.encode()).hexdigest()
 ```
 
-> ⚠️ gitleaks **fallará** porque el historial de este repositorio tiene secretos. Eso es esperado — en el siguiente paso aprenderás a gestionarlos correctamente.
+El formato `# nosemgrep: <rule-id>` le dice a Semgrep que ignore esa línea.
+El comentario estructurado encima provee el contexto de gobernanza.
 
 ### ¿Qué verificará el bot?
 
-- ✅ Que existe `.github/workflows/secrets-scan.yml`
-- ✅ Que el fichero contiene `gitleaks`, `trufflehog` o `detect-secrets`
+- ✅ Que `src/app.py` contiene `nosemgrep:`
+- ✅ Que existe una referencia de ticket (`SEC-` seguido de dígitos) en el fichero
 
 ### ¿Qué pasará después?
 
-En el **Paso 8** aprenderás a gestionar los falsos positivos y a suprimir hallazgos con gobernanza correcta.
+En el **Paso 9** formalizarás las excepciones en un fichero de política con gobernanza centralizada.
 
 ---
-*Paso 7 de 10 · Tutorial Avanzado de DevSecOps*
+*Paso 8 de 10 · Tutorial Avanzado de DevSecOps*
