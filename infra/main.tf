@@ -17,6 +17,7 @@ provider "aws" {
 
 # ❌ PROBLEMA 1: Bucket S3 con acceso público de lectura
 # Checkov: CKV_AWS_20 — S3 Bucket has an ACL defined which allows public READ access
+
 resource "aws_s3_bucket" "app_data" {
   bucket = "${var.project_name}-data-${var.environment}"
   tags   = var.common_tags
@@ -53,6 +54,7 @@ resource "aws_db_instance" "app_db" {
 
 # ❌ PROBLEMA 3: Base de datos accesible desde internet
 # Checkov: CKV_AWS_17 — Ensure all data stored in the RDS instance is not publicly accessible
+
 resource "aws_db_instance" "app_db" {
   identifier          = "${var.project_name}-db-${var.environment}"
   engine              = "mysql"
