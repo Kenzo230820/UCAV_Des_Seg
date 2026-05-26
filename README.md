@@ -1,76 +1,86 @@
-## Paso 5 de 10 — Escaneo de Infraestructura como Código (IaC)
+## Paso 6 de 10 — Corrección de misconfigurations en Terraform
 
 ### ¿Por qué importa esto?
 
-Los errores de configuración en Terraform, CloudFormation o Kubernetes YAML son la causa del 80% de los incidentes de seguridad en cloud (Gartner). A diferencia del código de aplicación, una misconfiguration en IaC puede exponer datos de todos los usuarios con un solo `terraform apply`.
-
-**Ejemplos reales**: Capital One (2019, S3 mal configurado), Twitch (2021, bucket público).
-
-### Situación actual
-
-`infra/main.tf` tiene **5 misconfigurations** que Checkov detectará:
-
-| Recurso | Problema | Checkov ID |
-|---|---|---|
-| `aws_s3_bucket_acl` | ACL `public-read` | CKV_AWS_20 |
-| `aws_s3_bucket` | Sin versioning | CKV_AWS_21 |
-| `aws_db_instance` | `publicly_accessible = true` | CKV_AWS_17 |
-| `aws_db_instance` | `storage_encrypted = false` | CKV_AWS_16 |
-| `aws_security_group` | Ingress 0.0.0.0/0 en todos los puertos | CKV_AWS_25 |
+Corregir los problemas en Terraform **antes** de aplicar los cambios es el propósito del IaC scanning. En este paso simulas el flujo real: el escáner encontró problemas → los corriges en código → el escáner vuelve a pasar → `terraform apply`.
 
 ### Tu tarea
 
-Crea `.github/workflows/iac-scan.yml`:
+Edita `infra/main.tf` aplicando estos 3 cambios:
 
-```yaml
-name: IaC Security Scan
+**Cambio 1 — Eliminar ACL pública del bucket S3:**
+```hcl
+# ELIMINAR este bloque completo:
+resource "aws_s3_bucket_acl" "app_data" {
+  bucket = aws_s3_bucket.app_data.id
+  acl    = "public-read"
+}
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'infra/**'
-      - '**.tf'
-      - '**.tfvars'
-  pull_request:
-    branches: [main]
+# AÑADIR en su lugar — bucket privado con versioning y cifrado:
+resource "aws_s3_bucket_versioning" "app_data" {
+  bucket = aws_s3_bucket.app_data.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
 
-permissions:
-  contents: read
-  security-events: write
+resource "aws_s3_bucket_server_side_encryption_configuration" "app_data" {
+  bucket = aws_s3_bucket.app_data.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms"
+    }
+  }
+}
+```
 
-jobs:
-  checkov:
-    name: Checkov IaC scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+**Cambio 2 — Base de datos privada y cifrada:**
+```hcl
+resource "aws_db_instance" "app_db" {
+  # ... resto de configuración sin cambios ...
 
-      - name: Checkov — escanear Terraform
-        uses: bridgecrewio/checkov-action@v12
-        with:
-          directory: infra/
-          framework: terraform
-          output_format: sarif
-          output_file_path: checkov-results.sarif
-          soft_fail: false
+  # ✅ Corregido: no accesible desde internet
+  publicly_accessible = false
 
-      - name: Subir resultados a Code Scanning
-        if: always()
-        uses: github/codeql-action/upload-sarif@45775bd8235c68ba998cffa5171334d58593da1a  # v3.28.0
-        with:
-          sarif_file: checkov-results.sarif
+  # ✅ Corregido: almacenamiento cifrado
+  storage_encrypted = true
+  kms_key_id        = aws_kms_key.rds.arn
+}
+```
+
+**Cambio 3 — Security group con reglas específicas:**
+```hcl
+resource "aws_security_group" "web_sg" {
+  # ... nombre y descripción sin cambios ...
+
+  # ✅ Corregido: solo HTTPS desde internet
+  ingress {
+    description = "HTTPS desde internet"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Sin regla de ingress para el puerto 0-65535
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
 ```
 
 ### ¿Qué verificará el bot?
 
-- ✅ Que existe `.github/workflows/iac-scan.yml`
-- ✅ Que el fichero contiene `checkov`, `tfsec` o `kics`
+- ✅ Que `infra/main.tf` **no** contiene `publicly_accessible = true`
+- ✅ Que `infra/main.tf` **no** contiene `storage_encrypted = false`
+- ✅ Que `infra/main.tf` **no** contiene `acl    = "public-read"`
 
 ### ¿Qué pasará después?
 
-Checkov detectará las 5 misconfigurations — el workflow fallará (❌). En el **Paso 6** corregirás los 3 problemas más críticos del fichero Terraform.
+En el **Paso 7** añadirás detección de secretos para proteger el historial de Git.
 
 ---
-*Paso 5 de 10 · Tutorial Avanzado de DevSecOps*
+*Paso 6 de 10 · Tutorial Avanzado de DevSecOps*
